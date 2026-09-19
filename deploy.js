@@ -1,4 +1,5 @@
 const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+const { afkCommand } = require("./src/commands/afk");
 
 const comandos = [
   ["tapa", "Dê um tapa em um usuário."],
@@ -27,6 +28,8 @@ const comandos = [
     )
     .toJSON(),
 );
+
+comandos.push(afkCommand.toJSON());
 
 const token = process.env.TOKEN;
 const clientId = process.env.CLIENT_ID;
