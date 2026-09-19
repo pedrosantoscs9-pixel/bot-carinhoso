@@ -1,5 +1,8 @@
 const { Client, EmbedBuilder, GatewayIntentBits } = require("discord.js");
 
+const GIF_FALLBACK =
+  "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif";
+
 const comandos = {
   tapa: {
     api: "slap",
@@ -78,9 +81,17 @@ client.on("interactionCreate", async (interaction) => {
 
   await interaction.deferReply();
 
+  let gifUrl = GIF_FALLBACK;
+
   try {
     const resposta = await fetch(
-      `https://api.waifu.pics/sfw/${comando.api}`,
+      `https://nekos.best/api/v2/${comando.api}`,
+      {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "DiscordGifBot/1.0",
+        },
+      },
     );
 
     if (!resposta.ok) {
@@ -88,21 +99,22 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     const dados = await resposta.json();
-    if (typeof dados.url !== "string" || !dados.url) {
+    const url = dados?.results?.[0]?.url;
+
+    if (typeof url !== "string" || !url) {
       throw new Error("A API não retornou uma URL de GIF válida");
     }
 
-    const embed = new EmbedBuilder().setImage(dados.url);
-    await interaction.editReply({
-      content: mensagem,
-      embeds: [embed],
-    });
+    gifUrl = url;
   } catch (erro) {
     console.error(`Erro ao buscar GIF para /${interaction.commandName}:`, erro);
-    await interaction.editReply(
-      "Não consegui buscar o GIF agora. Tente novamente em alguns instantes.",
-    );
   }
+
+  const embed = new EmbedBuilder().setImage(gifUrl);
+  await interaction.editReply({
+    content: mensagem,
+    embeds: [embed],
+  });
 });
 
 const token = process.env.TOKEN;
