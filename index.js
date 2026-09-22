@@ -1,15 +1,12 @@
-global.afk = new Map();
-
 const {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   Client,
   EmbedBuilder,
   GatewayIntentBits,
-  PermissionFlagsBits,
+  MessageFlags,
 } = require("discord.js");
-const {
-  afkCommand,
-  executarAfk,
-} = require("./src/commands/afk");
 
 const GIF_FALLBACK =
   "https://media.giphy.com/media/ICOgUNjpvO0PC/giphy.gif";
@@ -18,14 +15,29 @@ const comandos = {
   tapa: {
     api: "slap",
     resposta: (autor, usuario) => `${autor} deu um tapa em ${usuario} 👊`,
+    retorno: {
+      label: "Dar um tapa de volta",
+      emoji: "👊",
+      frase: "se deram tapas",
+    },
   },
   beijo: {
     api: "kiss",
-    resposta: (autor, usuario) => `${autor} beijou ${usuario} 😘`,
+    resposta: (autor, usuario) => `${autor} beijou ${usuario} 😍`,
+    retorno: {
+      label: "Beijar de volta",
+      emoji: "😍",
+      frase: "se beijaram",
+    },
   },
   abraco: {
     api: "hug",
     resposta: (autor, usuario) => `${autor} abraçou ${usuario} 🤗`,
+    retorno: {
+      label: "Abraçar de volta",
+      emoji: "🤗",
+      frase: "se abraçaram",
+    },
   },
   cafune: {
     api: "pat",
@@ -34,18 +46,38 @@ const comandos = {
   morder: {
     api: "bite",
     resposta: (autor, usuario) => `${autor} mordeu ${usuario} 😬`,
+    retorno: {
+      label: "Morder de volta",
+      emoji: "😬",
+      frase: "se morderam",
+    },
   },
   cutucar: {
     api: "poke",
     resposta: (autor, usuario) => `${autor} cutucou ${usuario} 👉`,
+    retorno: {
+      label: "Cutucar de volta",
+      emoji: "👉",
+      frase: "se cutucaram",
+    },
   },
   lamber: {
     api: "lick",
     resposta: (autor, usuario) => `${autor} lambeu ${usuario} 😋`,
+    retorno: {
+      label: "Lamber de volta",
+      emoji: "😋",
+      frase: "se lamberam",
+    },
   },
   chutar: {
     api: "kick",
     resposta: (autor, usuario) => `${autor} chutou ${usuario} 🦶`,
+    retorno: {
+      label: "Chutar de volta",
+      emoji: "🦶",
+      frase: "se chutaram",
+    },
   },
   bravo: {
     api: "angry",
@@ -108,11 +140,12 @@ const aliases = {
   envergonhar: "vergonha",
 };
 
+const contadoresInteracoes = new Map();
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMembers,
     GatewayIntentBits.MessageContent,
   ],
 });
@@ -122,18 +155,24 @@ client.once("ready", (bot) => {
 });
 
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+  if (interaction.isButton()) {
+    try {
+      await lidarComRetorno(interaction);
+    } catch (erro) {
+      console.error("Erro ao processar botão:", erro);
 
-  if (interaction.commandName === afkCommand.name) {
-    await executarAfk({
-      user: interaction.user,
-      member: interaction.member,
-      botMember: interaction.guild?.members.me,
-      motivo: interaction.options.getString("motivo"),
-      responder: (resposta) => interaction.reply(resposta),
-    });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({
+          content: "Não consegui processar esse botão agora.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+    }
+
     return;
   }
+
+  if (!interaction.isChatInputCommand()) return;
 
   const comando = comandos[interaction.commandName];
   if (!comando) return;
@@ -143,10 +182,13 @@ client.on("interactionCreate", async (interaction) => {
   await interaction.deferReply();
 
   await executarComando(
+    interaction.commandName,
     comando,
     interaction.user,
     usuario,
     (resposta) => interaction.editReply(resposta),
+    interaction.member,
+    interaction.options.getMember("usuario"),
   );
 });
 
@@ -154,102 +196,79 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
   const conteudo = message.content.trim();
-  const comandoAfk = conteudo.match(/^gra\s+afk(?:\s|$)/i);
-  const prefixo = conteudo.match(/^gra\s+/i);
-  const argumentos = prefixo
-    ? conteudo.slice(prefixo[0].length).trim()
-    : "";
-
-  if (comandoAfk) {
-    const oldName = message.member?.displayName ?? message.author.username;
-    const nomeSemAfk = oldName.replace(/^\[AFK\]\s*/i, "");
-    const motivo = conteudo.slice(comandoAfk[0].length).trim() || "Não sei :(";
-    const botMember = message.guild?.members.me;
-
-    global.afk.set(message.author.id, {
-      oldName,
-      motivo,
-    });
-
-    if (
-      message.member?.setNickname &&
-      botMember?.permissions?.has(PermissionFlagsBits.ManageNicknames)
-    ) {
-      try {
-        await message.member.setNickname(`[AFK] ${nomeSemAfk}`.slice(0, 32));
-      } catch (erro) {
-        console.log("ERRO NICK:", erro.message);
-      }
-    } else {
-      console.log(
-        "ERRO NICK: o bot precisa da permissão ManageNicknames e de um cargo acima do membro.",
-      );
-    }
-
-    await message.reply({
-      embeds: [
-        new EmbedBuilder()
-          .setColor("#32CD32")
-          .setThumbnail(message.author.displayAvatarURL())
-          .setDescription(
-            `Pronto! Agora você está afk e pode descansar sem ficarem te chamando pra jogar :O\n\nMotivo: ${motivo}`,
-          ),
-      ],
-    });
-    return;
-  }
-
-  const registroDoAutor = global.afk.get(message.author.id);
-  if (registroDoAutor) {
-    global.afk.delete(message.author.id);
-
-    if (message.member?.setNickname) {
-      try {
-        await message.member.setNickname(registroDoAutor.oldName);
-      } catch (erro) {
-        console.log("ERRO NICK AO RESTAURAR:", erro.message);
-      }
-    }
-
-    await message.channel.send({
-      content: `${message.author}\nAgora você está de volta! Senti saudades de você :p`,
-    });
-  }
-
-  const usuarioMencionado = [
-    ...message.mentions.users.values(),
-    ...(message.mentions.repliedUser ? [message.mentions.repliedUser] : []),
-  ].find((usuario) => global.afk.has(usuario.id));
-
-  if (usuarioMencionado) {
-    await message.channel.send({
-      content:
-        "o usuário que você marcou está AFK, não perturbe ele até ele voltar! Hmph!",
-    });
-  }
-
+  const prefixo = conteudo.match(/^gra(?:\s+|$)/i);
   if (!prefixo) return;
 
-  const partes = argumentos.split(/\s+/);
-  const nomeInformado = partes[0]?.toLocaleLowerCase("pt-BR");
+  const argumentos = conteudo.slice(prefixo[0].length).trim();
+  const partes = argumentos.split(/\s+/).filter(Boolean);
+  const nomeInformado = partes.shift()?.toLocaleLowerCase("pt-BR");
   const nomeComando = aliases[nomeInformado];
   const comando = comandos[nomeComando];
   const usuario = message.mentions.users.first();
+  const usuarioMembro = message.mentions.members.first();
 
   if (!comando || !usuario) return;
 
   await executarComando(
+    nomeComando,
     comando,
     message.author,
     usuario,
     (resposta) => message.reply(resposta),
+    message.member,
+    usuarioMembro,
   );
 });
 
-async function executarComando(comando, autor, usuario, responder) {
-  const mensagem = comando.resposta(autor, usuario);
-  let gifUrl = GIF_FALLBACK;
+function nomeExibicao(usuario, membro) {
+  return (
+    membro?.displayName ??
+    usuario?.globalName ??
+    usuario?.username ??
+    "usuário"
+  );
+}
 
+async function executarComando(
+  nomeComando,
+  comando,
+  autor,
+  usuario,
+  responder,
+  autorMembro,
+  usuarioMembro,
+) {
+  const mensagem = comando.resposta(
+    nomeExibicao(autor, autorMembro),
+    nomeExibicao(usuario, usuarioMembro),
+  );
+  const gifUrl = await buscarGif(comando);
+
+  const embed = new EmbedBuilder().setImage(gifUrl);
+  const resposta = {
+    content: mensagem,
+    embeds: [embed],
+    allowedMentions: { parse: [] },
+  };
+
+  if (comando.retorno) {
+    resposta.components = [
+      new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            `retorno:${nomeComando}:${autor.id}:${usuario.id}`,
+          )
+          .setLabel(comando.retorno.label)
+          .setEmoji(comando.retorno.emoji)
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    ];
+  }
+
+  await responder(resposta);
+}
+
+async function buscarGif(comando) {
   try {
     const resposta = await fetch(
       `https://nekos.best/api/v2/${comando.api}`,
@@ -272,15 +291,58 @@ async function executarComando(comando, autor, usuario, responder) {
       throw new Error("A API não retornou uma URL de GIF válida");
     }
 
-    gifUrl = url;
+    return url;
   } catch (erro) {
     console.error("Erro ao buscar GIF:", erro);
+    return GIF_FALLBACK;
+  }
+}
+
+async function lidarComRetorno(interaction) {
+  const partes = interaction.customId.split(":");
+  const [tipo, nomeComando, autorId, alvoId] = partes;
+
+  if (tipo !== "retorno" || partes.length !== 4) return;
+
+  const mentions = interaction.message?.mentions;
+  const alvoUsuario =
+    mentions?.users?.get?.(alvoId) ??
+    client.users.cache.get(alvoId);
+  const alvoMembro =
+    mentions?.members?.get?.(alvoId) ??
+    interaction.guild?.members.cache.get(alvoId);
+  const alvoNome = nomeExibicao(alvoUsuario, alvoMembro);
+
+  if (interaction.user.id !== alvoId) {
+    await interaction.reply({
+      content: `Eii! Você não é ${alvoNome}, saia daqui! 😡`,
+      allowedMentions: { parse: [] },
+      flags: MessageFlags.Ephemeral,
+    });
+    return;
   }
 
-  const embed = new EmbedBuilder().setImage(gifUrl);
-  await responder({
-    content: mensagem,
-    embeds: [embed],
+  const comando = comandos[nomeComando];
+  if (!comando?.retorno) return;
+
+  const ids = [autorId, alvoId].sort();
+  const chave = `${nomeComando}:${ids[0]}:${ids[1]}`;
+  const quantidade = (contadoresInteracoes.get(chave) ?? 0) + 1;
+  contadoresInteracoes.set(chave, quantidade);
+
+  const autor = client.users.cache.get(autorId);
+  const autorMembro = interaction.guild?.members.cache.get(autorId);
+  const autorNome = nomeExibicao(autor, autorMembro);
+  const vezes = quantidade === 1 ? "vez" : "vezes";
+  const textoContador =
+    `\n-# ${autorNome} e ${alvoNome} ${comando.retorno.frase} ` +
+    `${quantidade} ${vezes}`;
+  const gifUrl = await buscarGif(comando);
+
+  await interaction.reply({
+    content: `${comando.resposta(alvoNome, autorNome)}${textoContador}`,
+    embeds: [new EmbedBuilder().setImage(gifUrl)],
+    allowedMentions: { parse: [] },
   });
 }
 
