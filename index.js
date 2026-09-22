@@ -1,7 +1,9 @@
 const express = require('express');
 const app = express();
-app.get('/', (req, res) => res.send('Bot Carinhoso ON'));
-app.listen(process.env.PORT || 3000, () => console.log('Site fake on'));
+app.get('/', (req, res) => res.send('Granoleiro ta online!'));
+app.listen(process.env.PORT || 10000, () => {
+  console.log('Servidor web ligado');
+});
 const {
   ActionRowBuilder,
   ButtonBuilder,
